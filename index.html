@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily Work Time Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="background-glow glow-one"></div>
+    <div class="background-glow glow-two"></div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Daily focus planner</p>
+          <h1>Workday Time Manager</h1>
+          <p>
+            Plan your day, track deep work, and keep your focus sessions on track.
+          </p>
+        </div>
+        <div class="hero-badge">Stay calm. Stay focused.</div>
+      </header>
+
+      <section class="top-grid">
+        <div class="panel form-panel">
+          <h2>Add a task</h2>
+          <form id="task-form" class="task-form">
+            <label>
+              Task title
+              <input id="task-title" type="text" placeholder="What are you working on?" required />
+            </label>
+
+            <label>
+              Category
+              <select id="task-category">
+                <option value="Deep work">Deep work</option>
+                <option value="Meetings">Meetings</option>
+                <option value="Admin">Admin</option>
+                <option value="Learning">Learning</option>
+              </select>
+            </label>
+
+            <label>
+              Priority
+              <select id="task-priority">
+                <option value="High">High</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </label>
+
+            <label>
+              Estimate (minutes)
+              <input id="task-estimate" type="number" min="5" step="5" value="30" />
+            </label>
+
+            <button class="btn-primary" type="submit">Add task</button>
+          </form>
+        </div>
+
+        <div class="panel pomodoro-panel">
+          <div class="section-heading">
+            <h2>Pomodoro session</h2>
+            <p class="muted">A simple focus sprint to help you work in bursts.</p>
+          </div>
+
+          <div class="pomodoro-display">
+            <p id="pomodoro-mode" class="pomodoro-mode">Focus session</p>
+            <div id="pomodoro-time" class="pomodoro-time">25:00</div>
+            <p id="pomodoro-status" class="pomodoro-status">Ready to begin</p>
+          </div>
+
+          <div class="pomodoro-actions">
+            <button id="pomodoro-start" class="btn-primary" type="button">Start</button>
+            <button id="pomodoro-reset" class="btn-secondary" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tasks-panel">
+        <div class="section-heading">
+          <h2>Today's tasks</h2>
+          <p class="muted">Track one active task at a time and keep your day moving.</p>
+        </div>
+        <div id="task-list" class="task-list"></div>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="section-heading">
+          <h2>Summary</h2>
+          <p class="muted">A quick snapshot of how your day is shaping up.</p>
+        </div>
+        <p id="summary-text">No tasks yet. Add one to get started.</p>
+        <div class="stats">
+          <div>
+            <strong id="completed-count">0</strong>
+            <span>Completed</span>
+          </div>
+          <div>
+            <strong id="active-count">0</strong>
+            <span>Open</span>
+          </div>
+          <div>
+            <strong id="total-time">00:00:00</strong>
+            <span>Total tracked</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
