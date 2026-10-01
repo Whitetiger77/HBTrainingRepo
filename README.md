@@ -7,12 +7,19 @@ A browser-based learning project for planning tasks and tracking time. It uses p
 ### Tasks and time tracking
 
 - Add a task with a plain-text title, category, priority, and time estimate
+- Edit a task's title, category, priority, and estimate, or delete a task after confirming
 - Start and pause a task timer, with one active task at a time
 - Reset only a task's time for today, without erasing earlier or undated time
 - Carry unfinished tasks into today and keep saved tasks in a History view
 - See tasks completed today, all currently open tasks, and time tracked today
 - Keep per-day time and separate older undated totals
 - Save tasks and task-timer state in `localStorage`
+
+### Editing and deleting tasks
+
+Edit opens the task card as a form. Save changes updates only the title, category, priority, and estimate. Time, dates, completed status, and a running timer are not changed, so you can edit a running or completed task. Titles stay plain text, are trimmed, and cannot be empty. The estimate must be a whole number of minutes, 1 or more. Cancel or Escape closes the form without saving, and an error keeps what you typed.
+
+Delete asks first: "Delete task" removes the task, and "Keep task" or Escape cancels. Deletion cannot be undone. The task's tracked time, including its history, leaves your totals, and if its timer is running, the timer stops and that interval is discarded. Edit and Delete work from both Today and History. While a form or delete prompt is open, the card list stops refreshing each second so your typing is not interrupted, so other cards' timers refresh again once it is closed.
 
 ### Daily behavior and History
 
@@ -74,14 +81,16 @@ This is not a guaranteed background alarm. Browser sound settings, a sleeping de
 ## Known limitations
 
 - Refreshing or closing the page resets the Pomodoro timer, its completed-session count, and its sound preference. These are not saved with tasks.
-- The task list is rebuilt every second, which can remove keyboard focus from task controls.
+- The task list is rebuilt every second, which can remove keyboard focus from task controls. This is paused while editing or confirming a delete.
 - Saved task data is not fully validated. Malformed stored records can stop rendering, and browser-storage failures are not fully handled.
 - Task timers use wall-clock time, not activity detection. They can count time while the page is closed within the same day, but stop at midnight. Changing the device clock or timezone can affect tracking; timezone changes during a running session are not specially handled.
-- There is no task editing/deletion, CSV export, account system, or cloud sync in the current implementation.
+- Deleted tasks cannot be recovered; there is no undo or trash. There is no bulk delete, CSV export, account system, or cloud sync in the current implementation.
+- Edits do not change a task's history. Changing a category or estimate affects the whole task, not past days.
+- While a task is being edited or a delete prompt is open, other cards' displayed times pause until it is closed. Their timers keep counting.
 
 ## Testing and QA next steps
 
-Source review and small local Chromium checks have covered basic task behavior and the Pomodoro countdown, pause/resume/reset, four-session break cycle, sound controls, and audio fallback. Task-title checks have covered literal HTML text, HTML payloads, previously saved tasks, and reload persistence. Daily-behavior checks in local Chromium have covered carryover, Today/History filtering, daily totals and counts, midnight while open and after reopening, same-day refresh, old-record migration, timer switching/completion, Reset today, local dates, and daylight-saving midnight calculations. Local desktop and phone-width previews have also been checked. This does not verify alarm delivery through every device's speakers.
+Source review and small local Chromium checks have covered basic task behavior and the Pomodoro countdown, pause/resume/reset, four-session break cycle, sound controls, and audio fallback. Task-title checks have covered literal HTML text, HTML payloads, previously saved tasks, and reload persistence. Daily-behavior checks in local Chromium have covered carryover, Today/History filtering, daily totals and counts, midnight while open and after reopening, same-day refresh, old-record migration, timer switching/completion, Reset today, local dates, and daylight-saving midnight calculations. Task editing and deletion checks in local Chromium have covered saving all four fields, trimming, cancel and Escape, empty-title and bad-estimate errors, literal HTML titles, editing running and completed tasks, delete confirm/cancel, deleting a running task, deleting from History, the empty state, persistence after reload, and edits surviving timer ticks. Local desktop and phone-width previews have also been checked. This does not verify alarm delivery through every device's speakers.
 
 Full manual, cross-browser, accessibility, and long-running timer testing remain to be done. Fix the known issues, then run and record tests for task creation, timer switching, completion/reset, storage recovery, keyboard use, date boundaries, and background/sleep behavior.
 
