@@ -2,6 +2,13 @@ const STORAGE_KEY = "daily-work-time-manager.tasks";
 const STORAGE_VERSION = 2;
 const state = { tasks: [], activeTaskId: null, timerStart: null, timerEnd: null };
 let taskView = "today";
+// One task at a time can be in edit mode or waiting for delete confirmation.
+// The draft lives here so the list can be rebuilt without losing typed text.
+let editing = null;
+let confirmDeleteId = null;
+let focusRequest = null;
+const CATEGORIES = ["Deep work", "Meetings", "Admin", "Learning"];
+const PRIORITIES = ["High", "Medium", "Low"];
 
 const taskForm = document.getElementById("task-form");
 const taskList = document.getElementById("task-list");
@@ -100,7 +107,7 @@ function appendText(parent, className, text) {
   parent.appendChild(element);
   return element;
 }
-function render() {
+function render(options = {}) {
   const now = Date.now();
   stopAtDayBoundary(now);
   const today = dayKey(now);
@@ -115,6 +122,10 @@ function render() {
   todayButton.setAttribute("aria-pressed", String(taskView === "today"));
   historyButton.setAttribute("aria-pressed", String(taskView === "history"));
   dayNote.textContent = `${today} (device local date). Task timers stop at midnight. History keeps earlier and undated time. The summary always shows today.`;
+  // Rebuilding the list every second would wipe an open edit field, so the
+  // timer tick leaves the list alone while a task is being edited or a delete
+  // is waiting for confirmation. Any click or key press still rebuilds it.
+  if (options.fromTick && (editing || confirmDeleteId)) return;
   taskList.replaceChildren();
   const visible = taskView === "history" ? state.tasks : state.tasks.filter(task => !task.completed || task.completedOn === today);
   if (!visible.length) {
@@ -124,6 +135,7 @@ function render() {
   const cards = document.createElement("div");
   cards.className = "task-list";
   visible.forEach(task => {
+    if (editing && editing.id === task.id) { cards.appendChild(buildEditCard(task)); return; }
     const card = document.createElement("article");
     card.className = `task-card${task.completed ? " completed" : ""}`;
     const content = document.createElement("div");
@@ -158,6 +170,8 @@ function render() {
     for (const [action, text, className] of [
       ["start", state.activeTaskId === task.id ? "Pause" : "Start", "secondary"],
       ["reset", "Reset today", "danger"],
+      ["edit", "Edit", "secondary"],
+      ["delete", "Delete", "danger"],
     ]) {
       const button = document.createElement("button");
       button.type = "button";
@@ -170,8 +184,122 @@ function render() {
     }
     card.appendChild(actions);
     cards.appendChild(card);
+    if (confirmDeleteId === task.id) cards.appendChild(buildDeleteConfirm(task, now));
   });
   taskList.appendChild(cards);
+  if (focusRequest) {
+    const target = taskList.querySelector(focusRequest);
+    focusRequest = null;
+    if (target) target.focus();
+  }
+}
+function field(labelText, control) {
+  const label = document.createElement("label");
+  label.append(labelText, control);
+  return label;
+}
+function buildEditCard(task) {
+  const form = document.createElement("form");
+  form.className = "task-card editing edit-form";
+  form.noValidate = true;
+  const title = document.createElement("input");
+  title.type = "text"; title.name = "title"; title.required = true; title.value = editing.title;
+  const category = document.createElement("select");
+  category.name = "category";
+  // Keep a saved value even if it is not one of the standard options.
+  [...new Set([...CATEGORIES, editing.category])].forEach(value => category.add(new Option(value, value)));
+  category.value = editing.category;
+  const priority = document.createElement("select");
+  priority.name = "priority";
+  [...new Set([...PRIORITIES, editing.priority])].forEach(value => priority.add(new Option(value, value)));
+  priority.value = editing.priority;
+  const estimate = document.createElement("input");
+  estimate.type = "number"; estimate.name = "estimate"; estimate.min = "1"; estimate.step = "1"; estimate.value = editing.estimate;
+  const error = document.createElement("p");
+  error.className = "edit-error";
+  error.setAttribute("role", "alert");
+  error.textContent = editing.error || "";
+  const buttons = document.createElement("div");
+  buttons.className = "task-actions";
+  const save = document.createElement("button");
+  save.type = "submit"; save.className = "btn-primary"; save.textContent = "Save changes";
+  const cancel = document.createElement("button");
+  cancel.type = "button"; cancel.className = "secondary"; cancel.dataset.action = "cancel-edit"; cancel.textContent = "Cancel";
+  buttons.append(save, cancel);
+  form.append(field("Task title", title), field("Category", category), field("Priority", priority),
+    field("Estimate (minutes)", estimate), error, buttons);
+  form.addEventListener("input", () => {
+    editing.title = title.value; editing.category = category.value;
+    editing.priority = priority.value; editing.estimate = estimate.value;
+  });
+  form.addEventListener("submit", event => { event.preventDefault(); saveEdit(); });
+  if (!focusRequest) focusRequest = ".edit-form input[name=title]";
+  return form;
+}
+function buildDeleteConfirm(task, now) {
+  const box = document.createElement("div");
+  box.className = "delete-confirm";
+  box.setAttribute("role", "alert");
+  const total = formatDuration(taskTotalMs(task, now) / 1000);
+  const running = state.activeTaskId === task.id ? " Its running timer will stop." : "";
+  appendText(box, "delete-text", `Delete this task and its ${total} of tracked time? This cannot be undone, and the time leaves your totals.${running}`);
+  const buttons = document.createElement("div");
+  buttons.className = "task-actions";
+  const confirm = document.createElement("button");
+  confirm.type = "button"; confirm.className = "danger"; confirm.dataset.action = "confirm-delete"; confirm.dataset.id = task.id;
+  confirm.textContent = "Delete task";
+  const cancel = document.createElement("button");
+  cancel.type = "button"; cancel.className = "secondary"; cancel.dataset.action = "cancel-delete"; cancel.textContent = "Keep task";
+  buttons.append(confirm, cancel);
+  box.appendChild(buttons);
+  if (!focusRequest) focusRequest = "[data-action=cancel-delete]";
+  return box;
+}
+function startEdit(taskId) {
+  const task = state.tasks.find(item => item.id === taskId);
+  if (!task) return;
+  confirmDeleteId = null;
+  editing = { id: task.id, title: task.title, category: task.category, priority: task.priority, estimate: String(task.estimate), error: "" };
+  render();
+}
+function cancelEdit() {
+  const id = editing && editing.id;
+  editing = null;
+  if (id) focusRequest = `button[data-action=edit][data-id="${id}"]`;
+  render();
+}
+function saveEdit() {
+  if (!editing) return;
+  const task = state.tasks.find(item => item.id === editing.id);
+  if (!task) { editing = null; render(); return; }
+  const title = editing.title.trim();
+  const estimate = Number(editing.estimate);
+  const problem = !title ? "Enter a task title."
+    : !Number.isInteger(estimate) || estimate < 1 ? "Estimate must be a whole number of minutes, 1 or more." : "";
+  if (problem) { editing.error = problem; focusRequest = ".edit-form input[name=title]"; render(); return; }
+  // Only descriptive fields change. Time, dates, completion and the running timer are untouched.
+  task.title = title; task.category = editing.category; task.priority = editing.priority; task.estimate = estimate;
+  saveState();
+  cancelEdit();
+}
+function askDelete(taskId) {
+  editing = null;
+  confirmDeleteId = taskId;
+  render();
+}
+function deleteTask(taskId) {
+  stopAtDayBoundary();
+  confirmDeleteId = null;
+  const index = state.tasks.findIndex(item => item.id === taskId);
+  if (index === -1) { render(); return; }
+  if (state.activeTaskId === taskId) {
+    // The task is going away, so its running interval is discarded with it.
+    state.activeTaskId = null; state.timerStart = null; state.timerEnd = null;
+  }
+  state.tasks.splice(index, 1);
+  saveState();
+  focusRequest = "#task-list button";
+  render();
 }
 function createTaskFromForm(event) {
   event.preventDefault();
@@ -231,6 +359,16 @@ function handleTaskListClick(event) {
   if (!button) return;
   if (button.dataset.action === "start") toggleTaskTimer(button.dataset.id);
   if (button.dataset.action === "reset") resetTask(button.dataset.id);
+  if (button.dataset.action === "edit") startEdit(button.dataset.id);
+  if (button.dataset.action === "cancel-edit") cancelEdit();
+  if (button.dataset.action === "delete") askDelete(button.dataset.id);
+  if (button.dataset.action === "confirm-delete") deleteTask(button.dataset.id);
+  if (button.dataset.action === "cancel-delete") {
+    const id = confirmDeleteId;
+    confirmDeleteId = null;
+    if (id) focusRequest = `button[data-action=delete][data-id="${id}"]`;
+    render();
+  }
 }
 for (const [button, view] of [[todayButton, "today"], [historyButton, "history"]]) {
   button.addEventListener("click", () => { taskView = view; render(); });
@@ -430,7 +568,12 @@ renderPomodoro();
 // Restore tasks and reconcile any saved timer with its midnight deadline.
 loadState();
 render();
-setInterval(() => { render(); updatePomodoro(); }, 1000);
+setInterval(() => { render({ fromTick: true }); updatePomodoro(); }, 1000);
 document.addEventListener("visibilitychange", render);
 taskForm.addEventListener("submit", createTaskFromForm);
 taskList.addEventListener("click", handleTaskListClick);
+taskList.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  if (editing) cancelEdit();
+  else if (confirmDeleteId) { const id = confirmDeleteId; confirmDeleteId = null; focusRequest = `button[data-action=delete][data-id="${id}"]`; render(); }
+});
