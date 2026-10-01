@@ -80,9 +80,14 @@
 
       <section class="panel tasks-panel">
         <div class="section-heading">
-          <h2>Today's tasks</h2>
+          <h2 id="task-heading">Today's tasks</h2>
           <p class="muted">Track one active task at a time and keep your day moving.</p>
         </div>
+        <div class="task-views" aria-label="Task views">
+          <button id="view-today" class="btn-secondary" type="button" aria-pressed="true">Today</button>
+          <button id="view-history" class="btn-secondary" type="button" aria-pressed="false">History</button>
+        </div>
+        <p id="day-note" class="muted"></p>
         <div id="task-list" class="task-list"></div>
       </section>
 
@@ -95,7 +100,7 @@
         <div class="stats">
           <div>
             <strong id="completed-count">0</strong>
-            <span>Completed</span>
+            <span>Completed today</span>
           </div>
           <div>
             <strong id="active-count">0</strong>
@@ -103,7 +108,7 @@
           </div>
           <div>
             <strong id="total-time">00:00:00</strong>
-            <span>Total tracked</span>
+            <span>Tracked today</span>
           </div>
         </div>
       </section>
