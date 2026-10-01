@@ -1,247 +1,239 @@
 const STORAGE_KEY = "daily-work-time-manager.tasks";
+const STORAGE_VERSION = 2;
+const state = { tasks: [], activeTaskId: null, timerStart: null, timerEnd: null };
+let taskView = "today";
 
-// This object holds the current app state.
-const state = {
-  tasks: [],
-  activeTaskId: null,
-  timerStart: null,
-};
-
-// Grab the page elements we need.
 const taskForm = document.getElementById("task-form");
 const taskList = document.getElementById("task-list");
 const summaryText = document.getElementById("summary-text");
 const completedCount = document.getElementById("completed-count");
 const activeCount = document.getElementById("active-count");
 const totalTime = document.getElementById("total-time");
+const taskHeading = document.getElementById("task-heading");
+const todayButton = document.getElementById("view-today");
+const historyButton = document.getElementById("view-history");
+const dayNote = document.getElementById("day-note");
 
+// Use the browser's local calendar, not a UTC date string.
+function dayKey(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function nextMidnight(timestamp) {
+  const date = new Date(timestamp);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+}
+function nonnegative(value) {
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
 function loadState() {
-  const savedItems = localStorage.getItem(STORAGE_KEY);
-
-  if (!savedItems) {
-    return;
-  }
-
   try {
-    const parsed = JSON.parse(savedItems);
-    state.tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
-    state.activeTaskId = parsed.activeTaskId || null;
-    state.timerStart = parsed.timerStart || null;
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    const parsed = JSON.parse(saved);
+    const legacy = parsed.version !== STORAGE_VERSION;
+    state.tasks = (Array.isArray(parsed.tasks) ? parsed.tasks : [])
+      .filter(task => task && typeof task.id === "string")
+      .map(task => ({
+        ...task,
+        completed: Boolean(task.completed),
+        createdOn: typeof task.createdOn === "string" ? task.createdOn : null,
+        completedOn: typeof task.completedOn === "string" ? task.completedOn : null,
+        undatedMs: legacy ? nonnegative(task.elapsed) * 1000 : nonnegative(task.undatedMs),
+        timeByDay: legacy ? {} : Object.fromEntries(Object.entries(task.timeByDay || {})
+          .filter(([day, ms]) => /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(ms) && ms >= 0)),
+      }));
+    const active = state.tasks.find(task => task.id === parsed.activeTaskId && !task.completed);
+    if (active && Number.isFinite(parsed.timerStart) && parsed.timerStart > 0) {
+      state.activeTaskId = active.id;
+      state.timerStart = parsed.timerStart;
+      state.timerEnd = !legacy && Number.isFinite(parsed.timerEnd) && parsed.timerEnd > parsed.timerStart
+        ? parsed.timerEnd : nextMidnight(parsed.timerStart);
+    }
+    // Legacy totals have no work dates. Keep them undated. A saved running
+    // interval has a known start and can be dated without guessing.
+    stopAtDayBoundary();
+    if (legacy) saveState();
   } catch (error) {
     console.error("Unable to load saved tasks", error);
   }
 }
-
 function saveState() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      tasks: state.tasks,
-      activeTaskId: state.activeTaskId,
-      timerStart: state.timerStart,
-    })
-  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, ...state }));
 }
-
 function formatDuration(totalSeconds) {
-  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
-  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
+  const seconds = Math.floor(nonnegative(totalSeconds));
+  return [Math.floor(seconds / 3600), Math.floor(seconds % 3600 / 60), seconds % 60]
+    .map(value => String(value).padStart(2, "0")).join(":");
 }
-
-function getTaskElapsed(task) {
-  if (state.activeTaskId === task.id && state.timerStart) {
-    const secondsSinceStart = Math.floor((Date.now() - state.timerStart) / 1000);
-    return task.elapsed + secondsSinceStart;
+function currentIntervalMs(task, now = Date.now()) {
+  if (state.activeTaskId !== task.id || state.timerStart === null) return 0;
+  return Math.max(0, Math.min(now, state.timerEnd) - state.timerStart);
+}
+function taskDayMs(task, day, now = Date.now()) {
+  const current = state.timerStart !== null && dayKey(state.timerStart) === day
+    ? currentIntervalMs(task, now) : 0;
+  return nonnegative(task.timeByDay[day]) + current;
+}
+function taskTotalMs(task, now = Date.now()) {
+  return task.undatedMs + Object.values(task.timeByDay).reduce((sum, ms) => sum + ms, 0) + currentIntervalMs(task, now);
+}
+function pauseActiveTask(now = Date.now()) {
+  if (state.activeTaskId === null || state.timerStart === null) return;
+  const task = state.tasks.find(item => item.id === state.activeTaskId);
+  if (task) {
+    const day = dayKey(state.timerStart);
+    task.timeByDay[day] = nonnegative(task.timeByDay[day]) + currentIntervalMs(task, now);
   }
-
-  return task.elapsed;
+  state.activeTaskId = null;
+  state.timerStart = null;
+  state.timerEnd = null;
+  saveState();
 }
-
+function stopAtDayBoundary(now = Date.now()) {
+  if (state.timerEnd !== null && now >= state.timerEnd) pauseActiveTask(now);
+}
+function appendText(parent, className, text) {
+  const element = document.createElement("div");
+  element.className = className;
+  element.textContent = text;
+  parent.appendChild(element);
+  return element;
+}
 function render() {
-  taskList.innerHTML = "";
-
-  if (!state.tasks.length) {
-    taskList.innerHTML = '<p class="empty-state">No tasks yet. Add one above to begin your day.</p>';
-    summaryText.textContent = "No tasks yet. Add one to get started.";
-    completedCount.textContent = "0";
-    activeCount.textContent = "0";
-    totalTime.textContent = "00:00:00";
+  const now = Date.now();
+  stopAtDayBoundary(now);
+  const today = dayKey(now);
+  const completed = state.tasks.filter(task => task.completed && task.completedOn === today).length;
+  const open = state.tasks.filter(task => !task.completed).length;
+  const trackedMs = state.tasks.reduce((sum, task) => sum + taskDayMs(task, today, now), 0);
+  summaryText.textContent = `${completed} completed today, ${open} still open, ${formatDuration(trackedMs / 1000)} tracked today.`;
+  completedCount.textContent = String(completed);
+  activeCount.textContent = String(open);
+  totalTime.textContent = formatDuration(trackedMs / 1000);
+  taskHeading.textContent = taskView === "today" ? "Today's tasks" : "Task history";
+  todayButton.setAttribute("aria-pressed", String(taskView === "today"));
+  historyButton.setAttribute("aria-pressed", String(taskView === "history"));
+  dayNote.textContent = `${today} (device local date). Task timers stop at midnight. History keeps earlier and undated time. The summary always shows today.`;
+  taskList.replaceChildren();
+  const visible = taskView === "history" ? state.tasks : state.tasks.filter(task => !task.completed || task.completedOn === today);
+  if (!visible.length) {
+    appendText(taskList, "empty-state", taskView === "history" ? "No saved history yet." : "No tasks for today. Add one above or check History.");
     return;
   }
-
-  const completedTasks = state.tasks.filter((task) => task.completed).length;
-  const openTasks = state.tasks.filter((task) => !task.completed).length;
-  const trackedTime = state.tasks.reduce((sum, task) => sum + getTaskElapsed(task), 0);
-
-  summaryText.textContent = `${completedTasks} completed, ${openTasks} still open, ${formatDuration(trackedTime)} tracked today.`;
-  completedCount.textContent = String(completedTasks);
-  activeCount.textContent = String(openTasks);
-  totalTime.textContent = formatDuration(trackedTime);
-
-  const taskCards = document.createElement("div");
-  taskCards.className = "task-list";
-
-  state.tasks.forEach((task) => {
+  const cards = document.createElement("div");
+  cards.className = "task-list";
+  visible.forEach(task => {
     const card = document.createElement("article");
     card.className = `task-card${task.completed ? " completed" : ""}`;
-
-    const elapsed = getTaskElapsed(task);
-    const isActive = state.activeTaskId === task.id;
-
-    card.innerHTML = `
-      <main>
-        <div class="task-title"></div>
-        <div class="task-meta">${task.category} • ${task.priority} • Estimate ${task.estimate} min • Time ${formatDuration(elapsed)}</div>
-      </main>
-      <div class="task-actions">
-        <label class="checkbox-row">
-          <input type="checkbox" class="task-checkbox" data-id="${task.id}" ${task.completed ? "checked" : ""} />
-          <span>Done</span>
-        </label>
-        <button class="secondary" data-action="start" data-id="${task.id}">
-          ${isActive ? "Pause" : "Start"}
-        </button>
-        <button class="danger" data-action="reset" data-id="${task.id}">Reset</button>
-      </div>
-    `;
-
-    // Task titles are user input. Render them as text, never as HTML.
-    card.querySelector(".task-title").textContent = task.title;
-
-    taskCards.appendChild(card);
+    const content = document.createElement("div");
+    content.className = "task-content";
+    // Render all saved task values as plain text.
+    appendText(content, "task-title", task.title);
+    appendText(content, "task-meta", `${task.category} • ${task.priority} • Estimate ${task.estimate} min`);
+    appendText(content, "task-meta", `Today ${formatDuration(taskDayMs(task, today, now) / 1000)} • All time ${formatDuration(taskTotalMs(task, now) / 1000)}`);
+    if (taskView === "history") {
+      appendText(content, "task-meta", task.completed ? `Completed: ${task.completedOn || "date unknown (older task)"}` : "Open (also on Today's tasks)");
+      const days = new Set(Object.keys(task.timeByDay));
+      if (state.activeTaskId === task.id && state.timerStart !== null) days.add(dayKey(state.timerStart));
+      [...days].sort().reverse().forEach(day => {
+        appendText(content, "task-meta", `${day}: ${formatDuration(taskDayMs(task, day, now) / 1000)}`);
+      });
+      if (task.undatedMs > 0) appendText(content, "task-meta", `Older undated time: ${formatDuration(task.undatedMs / 1000)}`);
+    }
+    card.appendChild(content);
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+    const label = document.createElement("label");
+    label.className = "checkbox-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "task-checkbox";
+    checkbox.dataset.id = task.id;
+    checkbox.checked = task.completed;
+    const labelText = document.createElement("span");
+    labelText.textContent = "Done";
+    label.append(checkbox, labelText);
+    actions.appendChild(label);
+    for (const [action, text, className] of [
+      ["start", state.activeTaskId === task.id ? "Pause" : "Start", "secondary"],
+      ["reset", "Reset today", "danger"],
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.action = action;
+      button.dataset.id = task.id;
+      button.className = className;
+      button.textContent = text;
+      button.disabled = action === "start" && task.completed;
+      actions.appendChild(button);
+    }
+    card.appendChild(actions);
+    cards.appendChild(card);
   });
-
-  taskList.appendChild(taskCards);
+  taskList.appendChild(cards);
 }
-
 function createTaskFromForm(event) {
   event.preventDefault();
-
+  stopAtDayBoundary();
   const title = document.getElementById("task-title").value.trim();
-  const category = document.getElementById("task-category").value;
-  const priority = document.getElementById("task-priority").value;
-  const estimate = Number(document.getElementById("task-estimate").value || 30);
-
-  if (!title) {
-    return;
-  }
-
-  const newTask = {
-    id: String(Date.now()),
-    title,
-    category,
-    priority,
-    estimate,
-    elapsed: 0,
-    completed: false,
-  };
-
-  state.tasks.unshift(newTask);
-
+  if (!title) return;
+  state.tasks.unshift({
+    id: String(Date.now()), title,
+    category: document.getElementById("task-category").value,
+    priority: document.getElementById("task-priority").value,
+    estimate: Number(document.getElementById("task-estimate").value || 30),
+    completed: false, createdOn: dayKey(), completedOn: null, timeByDay: {}, undatedMs: 0,
+  });
   taskForm.reset();
   document.getElementById("task-estimate").value = "30";
   saveState();
   render();
 }
-
-function pauseActiveTask() {
-  if (!state.activeTaskId || !state.timerStart) {
-    return;
-  }
-
-  const activeTask = state.tasks.find((task) => task.id === state.activeTaskId);
-
-  if (activeTask) {
-    const secondsSinceStart = Math.floor((Date.now() - state.timerStart) / 1000);
-    activeTask.elapsed += secondsSinceStart;
-  }
-
-  state.activeTaskId = null;
-  state.timerStart = null;
-  saveState();
-}
-
 function toggleTaskTimer(taskId) {
-  if (state.activeTaskId && state.activeTaskId !== taskId) {
-    pauseActiveTask();
-  }
-
+  stopAtDayBoundary();
+  const task = state.tasks.find(item => item.id === taskId);
+  if (!task || task.completed) return;
   if (state.activeTaskId === taskId) {
     pauseActiveTask();
-    render();
-    return;
+  } else {
+    pauseActiveTask();
+    state.activeTaskId = taskId;
+    state.timerStart = Date.now();
+    state.timerEnd = nextMidnight(state.timerStart);
+    saveState();
   }
-
-  const task = state.tasks.find((item) => item.id === taskId);
-
-  if (!task) {
-    return;
-  }
-
-  state.activeTaskId = task.id;
-  state.timerStart = Date.now();
-  saveState();
   render();
 }
-
 function toggleTaskCompletion(taskId) {
-  const task = state.tasks.find((item) => item.id === taskId);
-
-  if (!task) {
-    return;
-  }
-
+  stopAtDayBoundary();
+  const task = state.tasks.find(item => item.id === taskId);
+  if (!task) return;
+  if (state.activeTaskId === task.id) pauseActiveTask();
   task.completed = !task.completed;
-
-  if (task.completed && state.activeTaskId === task.id) {
-    pauseActiveTask();
-  }
-
+  task.completedOn = task.completed ? dayKey() : null;
   saveState();
   render();
 }
-
 function resetTask(taskId) {
-  const task = state.tasks.find((item) => item.id === taskId);
-
-  if (!task) {
-    return;
-  }
-
-  if (state.activeTaskId === task.id) {
-    pauseActiveTask();
-  }
-
-  task.elapsed = 0;
+  stopAtDayBoundary();
+  const task = state.tasks.find(item => item.id === taskId);
+  if (!task) return;
+  if (state.activeTaskId === task.id) pauseActiveTask();
+  delete task.timeByDay[dayKey()];
   saveState();
   render();
 }
-
 function handleTaskListClick(event) {
-  const button = event.target.closest("button");
   const checkbox = event.target.closest(".task-checkbox");
-
-  if (checkbox) {
-    toggleTaskCompletion(checkbox.dataset.id);
-    return;
-  }
-
-  if (!button) {
-    return;
-  }
-
-  const action = button.dataset.action;
-  const taskId = button.dataset.id;
-
-  if (action === "start") {
-    toggleTaskTimer(taskId);
-  }
-
-  if (action === "reset") {
-    resetTask(taskId);
-  }
+  if (checkbox) { toggleTaskCompletion(checkbox.dataset.id); return; }
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.dataset.action === "start") toggleTaskTimer(button.dataset.id);
+  if (button.dataset.action === "reset") resetTask(button.dataset.id);
+}
+for (const [button, view] of [[todayButton, "today"], [historyButton, "history"]]) {
+  button.addEventListener("click", () => { taskView = view; render(); });
 }
 
 // The Pomodoro timer runs separately from task time tracking.
@@ -435,15 +427,10 @@ pomodoroReset.addEventListener("click", resetPomodoro);
 document.addEventListener("visibilitychange", updatePomodoro);
 renderPomodoro();
 
-// Load saved tasks after the page and scripts are ready.
+// Restore tasks and reconcile any saved timer with its midnight deadline.
 loadState();
 render();
-
-// Keep the display fresh every second.
-setInterval(() => {
-  render();
-  updatePomodoro();
-}, 1000);
-
+setInterval(() => { render(); updatePomodoro(); }, 1000);
+document.addEventListener("visibilitychange", render);
 taskForm.addEventListener("submit", createTaskFromForm);
 taskList.addEventListener("click", handleTaskListClick);
