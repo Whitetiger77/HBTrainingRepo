@@ -260,6 +260,89 @@ const pomodoroReset = document.getElementById("pomodoro-reset");
 pomodoroStatus.setAttribute("role", "status");
 pomodoroStatus.setAttribute("aria-live", "polite");
 
+// A short, generated chime needs no downloaded audio file.
+let pomodoroAudio = null;
+let pomodoroSoundEnabled = true;
+
+const soundActions = document.createElement("div");
+soundActions.className = "pomodoro-actions";
+const soundToggle = document.createElement("button");
+soundToggle.type = "button";
+soundToggle.className = "btn-secondary";
+soundToggle.textContent = "Sound: On";
+soundToggle.setAttribute("aria-pressed", "true");
+const soundTest = document.createElement("button");
+soundTest.type = "button";
+soundTest.className = "btn-secondary";
+soundTest.textContent = "Test sound";
+soundActions.append(soundToggle, soundTest);
+pomodoroReset.parentElement.after(soundActions);
+const soundNote = document.createElement("p");
+soundNote.className = "muted";
+soundNote.textContent = "Sound plays at the end of focus and breaks. Keep this page open and your device unmuted.";
+soundActions.after(soundNote);
+
+function preparePomodoroAudio() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) {
+      return Promise.resolve(false);
+    }
+    if (!pomodoroAudio || pomodoroAudio.state === "closed") {
+      pomodoroAudio = new AudioContext();
+    }
+    // Called from a button click to satisfy browser autoplay rules.
+    return pomodoroAudio.resume().then(() => pomodoroAudio.state === "running").catch(() => false);
+  } catch (error) {
+    return Promise.resolve(false);
+  }
+}
+
+function playPomodoroChime() {
+  if (!pomodoroAudio || pomodoroAudio.state !== "running") {
+    return false;
+  }
+
+  try {
+    [0, 0.4, 0.8].forEach((offset) => {
+      const start = pomodoroAudio.currentTime + offset;
+      const oscillator = pomodoroAudio.createOscillator();
+      const gain = pomodoroAudio.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
+      gain.gain.linearRampToValueAtTime(0, start + 0.25);
+      oscillator.connect(gain);
+      gain.connect(pomodoroAudio.destination);
+      oscillator.start(start);
+      oscillator.stop(start + 0.26);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+soundToggle.addEventListener("click", () => {
+  pomodoroSoundEnabled = !pomodoroSoundEnabled;
+  soundToggle.textContent = pomodoroSoundEnabled ? "Sound: On" : "Sound: Off";
+  soundToggle.setAttribute("aria-pressed", String(pomodoroSoundEnabled));
+  if (pomodoroSoundEnabled) {
+    preparePomodoroAudio();
+  }
+});
+soundTest.addEventListener("click", async () => {
+  const ready = await preparePomodoroAudio();
+  soundNote.textContent = ready && playPomodoroChime()
+    ? "Test chime played. Keep this page open and your device unmuted."
+    : "Sound is unavailable or blocked. The timer still works; watch the on-screen status.";
+});
+
 function renderPomodoro() {
   const seconds = Math.ceil(pomodoro.remainingMs / 1000);
   const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -290,6 +373,9 @@ function finishPomodoro() {
   }
 
   pomodoroStart.textContent = "Start";
+  if (pomodoroSoundEnabled && !playPomodoroChime()) {
+    pomodoroStatus.textContent += " Sound unavailable; use Test sound to check it.";
+  }
 }
 
 function updatePomodoro() {
@@ -317,6 +403,9 @@ function togglePomodoro() {
       pomodoroStatus.textContent = "Paused. Press Resume to continue.";
     }
   } else {
+    if (pomodoroSoundEnabled) {
+      preparePomodoroAudio();
+    }
     pomodoro.paused = false;
     pomodoro.endsAt = Date.now() + pomodoro.remainingMs;
     pomodoroStatus.textContent = pomodoro.mode === "focus"
