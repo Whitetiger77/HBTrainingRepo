@@ -92,7 +92,7 @@ function render() {
 
     card.innerHTML = `
       <main>
-        <div class="task-title">${task.title}</div>
+        <div class="task-title"></div>
         <div class="task-meta">${task.category} • ${task.priority} • Estimate ${task.estimate} min • Time ${formatDuration(elapsed)}</div>
       </main>
       <div class="task-actions">
@@ -106,6 +106,9 @@ function render() {
         <button class="danger" data-action="reset" data-id="${task.id}">Reset</button>
       </div>
     `;
+
+    // Task titles are user input. Render them as text, never as HTML.
+    card.querySelector(".task-title").textContent = task.title;
 
     taskCards.appendChild(card);
   });
