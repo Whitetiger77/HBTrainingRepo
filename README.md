@@ -1,37 +1,39 @@
 # Workday Time Manager
 
-A daily focus planner that runs entirely in the browser. Plan your day, track time on each task, and use a built-in Pomodoro timer for focus sprints. No frameworks, no build step, no accounts.
+A browser-based learning project for planning tasks and tracking time. The current implementation uses plain HTML and JavaScript with local browser storage. It is a work in progress, not a finished QA portfolio showcase.
 
-## Features
+## Implemented in the current code
 
-- Add tasks with a category (Deep work, Meetings, Admin, Learning), priority, and time estimate
-- Start, pause, and reset a live timer on any task
-- Mark tasks done and see a running daily summary: completed count, open count, and total time tracked
-- Built-in Pomodoro session panel for working in bursts
-- Automatic saving to localStorage, so your day survives a page refresh
+- Add a task with a title, category, priority, and time estimate
+- Start and pause a task timer, with one active task at a time
+- Reset a task's tracked time
+- Mark tasks complete and see completed/open counts and total tracked time
+- Save tasks and timer state in localStorage
 
-## Run it
+These features were checked through source review and a small local Chromium test harness. Full manual, cross-browser, accessibility, and long-running timer testing remain to be done.
 
-Clone the repo and open `index.html` in a browser. That's it. Any static file server works too:
+## Run locally
+
+Clone the repository and serve its files from a local folder:
 
 ```bash
 git clone https://github.com/Whitetiger77/HBTrainingRepo.git
 cd HBTrainingRepo
-open index.html        # macOS
-# or: python3 -m http.server 8000
+python3 -m http.server 8000
 ```
 
-## Tech
+Open `http://localhost:8000` in a browser. Python 3 is only used here as a local server; the application itself has no framework or package-install step.
 
-- Vanilla HTML, CSS, and JavaScript
-- State persisted with the browser's localStorage API
-- Zero dependencies
+## Known limitations
 
-## What it shows
+- `index.html` references `styles.css`, but that file is missing from the current main branch. The page will not have its intended styling.
+- The Pomodoro panel is a placeholder. Its Start/Reset controls do not implement a countdown.
+- The summary says "today", but saved tasks and tracked time are not separated by calendar day.
+- Task titles are inserted as HTML rather than plain text. Do not paste HTML or untrusted task titles until this is fixed.
+- The task list is rebuilt every second, which can remove keyboard focus from task controls.
+- Saved task data is not fully validated. Malformed stored records can stop rendering.
+- There is no task editing/deletion, history view, CSV export, account system, or cloud sync in the current implementation.
 
-Dom manipulation and event handling in plain JavaScript, client-side state management, time tracking logic, and form handling, all without a framework.
+## QA next steps
 
-
-## Status
-
-Learning project, functional and in use. Ideas for later: persistent history across days, weekly summaries, and export to CSV.
+Fix the known issues, then run and record tests for task creation, timer switching, completion/reset, storage recovery, keyboard use, and date boundaries. Publish only the test cases, results, and fixes that have actually been completed. A test plan and defect register are being reviewed separately; they are not yet part of this repository.
