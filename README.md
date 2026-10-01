@@ -6,7 +6,7 @@ A browser-based learning project for planning tasks and tracking time. The curre
 
 - Add a task with a title, category, priority, and time estimate
 - Start and pause a task timer, with one active task at a time
-- Reset a task's tracked time
+- Reset a task\x27s tracked time
 - Mark tasks complete and see completed/open counts and total tracked time
 - Save tasks and timer state in localStorage
 
@@ -26,7 +26,6 @@ Open `http://localhost:8000` in a browser. Python 3 is only used here as a local
 
 ## Known limitations
 
-- `index.html` references `styles.css`, but that file is missing from the current main branch. The page will not have its intended styling.
 - The Pomodoro panel is a placeholder. Its Start/Reset controls do not implement a countdown.
 - The summary says "today", but saved tasks and tracked time are not separated by calendar day.
 - Task titles are inserted as HTML rather than plain text. Do not paste HTML or untrusted task titles until this is fixed.
