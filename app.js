@@ -241,6 +241,108 @@ function handleTaskListClick(event) {
   }
 }
 
+// The Pomodoro timer runs separately from task time tracking.
+const pomodoro = {
+  mode: "focus",
+  completedSessions: 0,
+  remainingMs: 25 * 60 * 1000,
+  endsAt: null,
+  paused: false,
+};
+
+const pomodoroMode = document.getElementById("pomodoro-mode");
+const pomodoroTime = document.getElementById("pomodoro-time");
+const pomodoroStatus = document.getElementById("pomodoro-status");
+const pomodoroStart = document.getElementById("pomodoro-start");
+const pomodoroReset = document.getElementById("pomodoro-reset");
+
+// Announce status changes, not every second of the countdown.
+pomodoroStatus.setAttribute("role", "status");
+pomodoroStatus.setAttribute("aria-live", "polite");
+
+function renderPomodoro() {
+  const seconds = Math.ceil(pomodoro.remainingMs / 1000);
+  const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const remainder = String(seconds % 60).padStart(2, "0");
+  pomodoroTime.textContent = `${minutes}:${remainder}`;
+  pomodoroMode.textContent = pomodoro.mode === "focus"
+    ? "Focus session"
+    : pomodoro.mode === "shortBreak" ? "Short break" : "Long break";
+  pomodoroStart.textContent = pomodoro.endsAt !== null
+    ? "Pause"
+    : pomodoro.paused ? "Resume" : "Start";
+}
+
+function finishPomodoro() {
+  pomodoro.endsAt = null;
+  pomodoro.paused = false;
+
+  if (pomodoro.mode === "focus") {
+    pomodoro.completedSessions += 1;
+    const longBreak = pomodoro.completedSessions % 4 === 0;
+    pomodoro.mode = longBreak ? "longBreak" : "shortBreak";
+    pomodoro.remainingMs = (longBreak ? 15 : 5) * 60 * 1000;
+    pomodoroStatus.textContent = `Focus complete! ${longBreak ? "15" : "5"}-minute break ready. Press Start when ready.`;
+  } else {
+    pomodoro.mode = "focus";
+    pomodoro.remainingMs = 25 * 60 * 1000;
+    pomodoroStatus.textContent = "Break complete! Next focus session ready. Press Start when ready.";
+  }
+
+  pomodoroStart.textContent = "Start";
+}
+
+function updatePomodoro() {
+  if (pomodoro.endsAt !== null) {
+    // Use elapsed wall-clock time so background tabs do not slow the timer.
+    pomodoro.remainingMs = Math.max(0, pomodoro.endsAt - Date.now());
+
+    if (pomodoro.remainingMs === 0) {
+      finishPomodoro();
+    }
+  }
+
+  renderPomodoro();
+}
+
+function togglePomodoro() {
+  const wasRunning = pomodoro.endsAt !== null;
+  updatePomodoro();
+
+  if (wasRunning) {
+    // A click after time runs out should leave the next phase ready, not start it.
+    if (pomodoro.endsAt !== null) {
+      pomodoro.endsAt = null;
+      pomodoro.paused = true;
+      pomodoroStatus.textContent = "Paused. Press Resume to continue.";
+    }
+  } else {
+    pomodoro.paused = false;
+    pomodoro.endsAt = Date.now() + pomodoro.remainingMs;
+    pomodoroStatus.textContent = pomodoro.mode === "focus"
+      ? "Focus time. One thing at a time."
+      : "Take a break. The next focus session can wait.";
+  }
+
+  renderPomodoro();
+}
+
+function resetPomodoro() {
+  pomodoro.mode = "focus";
+  pomodoro.completedSessions = 0;
+  pomodoro.remainingMs = 25 * 60 * 1000;
+  pomodoro.endsAt = null;
+  pomodoro.paused = false;
+  pomodoroStart.textContent = "Start";
+  pomodoroStatus.textContent = "Ready to begin. Reset starts a new four-session cycle.";
+  renderPomodoro();
+}
+
+pomodoroStart.addEventListener("click", togglePomodoro);
+pomodoroReset.addEventListener("click", resetPomodoro);
+document.addEventListener("visibilitychange", updatePomodoro);
+renderPomodoro();
+
 // Load saved tasks after the page and scripts are ready.
 loadState();
 render();
@@ -248,6 +350,7 @@ render();
 // Keep the display fresh every second.
 setInterval(() => {
   render();
+  updatePomodoro();
 }, 1000);
 
 taskForm.addEventListener("submit", createTaskFromForm);
