@@ -105,3 +105,13 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .task-views { display: flex; gap: 10px; margin-bottom: 12px; }
 .task-views [aria-pressed="true"] { background: var(--accent); color: #fff; }
 #day-note { margin-bottom: 18px; }
+
+.task-card.editing { flex-direction: column; align-items: stretch; background: #fff; border-color: var(--accent); }
+.edit-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.edit-form label { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: .84rem; font-weight: 600; }
+.edit-form label:first-child, .edit-form > .task-actions, .edit-error { grid-column: 1 / -1; }
+.edit-error { margin: 0; color: #a12b2b; font-size: .85rem; }
+.edit-error:empty { display: none; }
+.delete-confirm { margin-top: -4px; padding: 14px 18px; background: #fdf3f1; border: 1px solid #e3b7b0; border-radius: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.delete-text { flex: 1 1 260px; font-size: .88rem; }
+@media (max-width: 680px) { .edit-form { grid-template-columns: 1fr; } }
